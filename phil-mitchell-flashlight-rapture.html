@@ -1,0 +1,691 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>The Phil Mitchell Radio Hour - Flashlight Sync</title>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&display=swap');
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Cinzel', serif;
+            background: #000;
+            color: #fff;
+            overflow-x: hidden;
+        }
+        
+        #root {
+            min-height: 100vh;
+        }
+        
+        .rapture-bg {
+            background: radial-gradient(ellipse at center, #4a0e0e 0%, #1a0000 50%, #000000 100%);
+            position: relative;
+        }
+        
+        .rapture-bg::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: 
+                linear-gradient(45deg, transparent 48%, rgba(139, 0, 0, 0.1) 49%, rgba(139, 0, 0, 0.1) 51%, transparent 52%),
+                linear-gradient(-45deg, transparent 48%, rgba(139, 0, 0, 0.1) 49%, rgba(139, 0, 0, 0.1) 51%, transparent 52%);
+            background-size: 100px 100px;
+            opacity: 0.3;
+            pointer-events: none;
+        }
+        
+        .lightning-glow {
+            box-shadow: 0 0 20px rgba(139, 0, 139, 0.5), 0 0 40px rgba(139, 0, 139, 0.3);
+        }
+        
+        .text-glow {
+            text-shadow: 0 0 10px rgba(255, 255, 255, 0.5), 0 0 20px rgba(139, 0, 139, 0.3);
+        }
+        
+        .phil-title {
+            font-family: 'Cinzel', serif;
+            font-weight: 700;
+            letter-spacing: 0.15em;
+            text-transform: uppercase;
+        }
+        
+        .radio-o {
+            display: inline-block;
+            position: relative;
+        }
+        
+        .radio-o::before {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 0.6em;
+            height: 0.02em;
+            background: currentColor;
+        }
+        
+        .btn-rapture {
+            background: linear-gradient(135deg, #8b0000 0%, #4a0000 100%);
+            border: 2px solid rgba(139, 0, 139, 0.5);
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .btn-rapture::before {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 0;
+            height: 0;
+            border-radius: 50%;
+            background: rgba(139, 0, 139, 0.3);
+            transform: translate(-50%, -50%);
+            transition: width 0.6s, height 0.6s;
+        }
+        
+        .btn-rapture:hover::before {
+            width: 300px;
+            height: 300px;
+        }
+        
+        .btn-rapture:hover {
+            border-color: rgba(139, 0, 139, 0.8);
+            box-shadow: 0 0 30px rgba(139, 0, 139, 0.6);
+        }
+        
+        .pulse-ring {
+            animation: pulse 2s ease-out infinite;
+        }
+        
+        @keyframes pulse {
+            0% {
+                box-shadow: 0 0 0 0 rgba(139, 0, 139, 0.7);
+            }
+            70% {
+                box-shadow: 0 0 0 20px rgba(139, 0, 139, 0);
+            }
+            100% {
+                box-shadow: 0 0 0 0 rgba(139, 0, 139, 0);
+            }
+        }
+        
+        .lightning-bolt {
+            animation: flicker 3s infinite;
+        }
+        
+        @keyframes flicker {
+            0%, 100% { opacity: 1; }
+            45%, 55% { opacity: 0.3; }
+            50% { opacity: 1; }
+        }
+        
+        input[type="password"] {
+            background: rgba(0, 0, 0, 0.6);
+            border: 2px solid rgba(139, 0, 139, 0.3);
+            color: #fff;
+            font-family: 'Cinzel', serif;
+        }
+        
+        input[type="password"]:focus {
+            outline: none;
+            border-color: rgba(139, 0, 139, 0.7);
+            box-shadow: 0 0 20px rgba(139, 0, 139, 0.3);
+        }
+        
+        .connected-indicator {
+            animation: pulse-glow 2s ease-in-out infinite;
+        }
+        
+        @keyframes pulse-glow {
+            0%, 100% {
+                opacity: 0.6;
+                box-shadow: 0 0 10px rgba(0, 255, 100, 0.5);
+            }
+            50% {
+                opacity: 1;
+                box-shadow: 0 0 20px rgba(0, 255, 100, 0.8);
+            }
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+    
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+
+        const useSimulatedWebSocket = () => {
+            const [message, setMessage] = useState(null);
+            const [connected, setConnected] = useState(false);
+            
+            useEffect(() => {
+                setConnected(true);
+                
+                const handleStorage = (e) => {
+                    if (e.key === 'flashlight-command') {
+                        const data = JSON.parse(e.newValue);
+                        setMessage(data);
+                    }
+                };
+                
+                window.addEventListener('storage', handleStorage);
+                
+                const handleCustom = (e) => {
+                    setMessage(e.detail);
+                };
+                window.addEventListener('flashlight-broadcast', handleCustom);
+                
+                return () => {
+                    window.removeEventListener('storage', handleStorage);
+                    window.removeEventListener('flashlight-broadcast', handleCustom);
+                };
+            }, []);
+            
+            const send = (data) => {
+                const payload = { ...data, timestamp: Date.now() };
+                localStorage.setItem('flashlight-command', JSON.stringify(payload));
+                window.dispatchEvent(new CustomEvent('flashlight-broadcast', { detail: payload }));
+            };
+            
+            return { send, message, connected };
+        };
+
+        const LightningIcon = ({ size = 24 }) => (
+            <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" className="lightning-bolt">
+                <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" stroke="currentColor" strokeWidth="1" />
+            </svg>
+        );
+
+        const RadioIcon = ({ size = 24 }) => (
+            <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <circle cx="12" cy="12" r="2"></circle>
+                <path d="M16.24 7.76a6 6 0 0 1 0 8.49m-8.48-.01a6 6 0 0 1 0-8.49m11.31-2.82a10 10 0 0 1 0 14.14m-14.14 0a10 10 0 0 1 0-14.14"></path>
+            </svg>
+        );
+
+        const FlashlightController = () => {
+            const [mode, setMode] = useState('choose');
+            const [password, setPassword] = useState('');
+            const [isAuthenticated, setIsAuthenticated] = useState(false);
+            const [stream, setStream] = useState(null);
+            const [track, setTrack] = useState(null);
+            const [isFlashing, setIsFlashing] = useState(false);
+            
+            const { send, message } = useSimulatedWebSocket();
+            
+            const CONTROL_PASSWORD = 'rapture';
+            
+            const requestFlashlight = async () => {
+                try {
+                    const mediaStream = await navigator.mediaDevices.getUserMedia({
+                        video: { facingMode: 'environment' }
+                    });
+                    setStream(mediaStream);
+                    const videoTrack = mediaStream.getVideoTracks()[0];
+                    setTrack(videoTrack);
+                    return videoTrack;
+                } catch (err) {
+                    alert('Unable to access camera/flashlight. Please grant camera permission.');
+                    return null;
+                }
+            };
+            
+            const setFlashlight = async (on) => {
+                if (!track) return;
+                try {
+                    await track.applyConstraints({
+                        advanced: [{ torch: on }]
+                    });
+                    setIsFlashing(on);
+                } catch (err) {
+                    console.error('Flashlight control error:', err);
+                }
+            };
+            
+            const executeWave = async () => {
+                const delay = Math.random() * 3000;
+                await new Promise(resolve => setTimeout(resolve, delay));
+                
+                for (let i = 0; i < 3; i++) {
+                    await setFlashlight(true);
+                    await new Promise(resolve => setTimeout(resolve, 500));
+                    await setFlashlight(false);
+                    await new Promise(resolve => setTimeout(resolve, 500));
+                }
+            };
+            
+            const executeFlicker = async () => {
+                const endTime = Date.now() + 10000;
+                
+                while (Date.now() < endTime) {
+                    const onTime = Math.random() * 300 + 50;
+                    const offTime = Math.random() * 300 + 50;
+                    
+                    await setFlashlight(true);
+                    await new Promise(resolve => setTimeout(resolve, onTime));
+                    await setFlashlight(false);
+                    await new Promise(resolve => setTimeout(resolve, offTime));
+                }
+                
+                await setFlashlight(false);
+            };
+            
+            useEffect(() => {
+                if (mode === 'audience' && message && track) {
+                    if (message.command === 'wave') {
+                        executeWave();
+                    } else if (message.command === 'flicker') {
+                        executeFlicker();
+                    }
+                }
+            }, [message, mode, track]);
+            
+            useEffect(() => {
+                return () => {
+                    if (stream) {
+                        stream.getTracks().forEach(track => track.stop());
+                    }
+                };
+            }, [stream]);
+            
+            const handleLogin = () => {
+                if (password === CONTROL_PASSWORD) {
+                    setIsAuthenticated(true);
+                } else {
+                    alert('Incorrect password');
+                }
+            };
+            
+            // Mode selection
+            if (mode === 'choose') {
+                return (
+                    <div className="rapture-bg" style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
+                        <div style={{ maxWidth: '500px', width: '100%' }}>
+                            <div style={{ textAlign: 'center', marginBottom: '60px' }}>
+                                <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.6)', marginBottom: '20px', fontStyle: 'italic' }}>
+                                    It's the Rapture, so why is this preacher still here?
+                                </div>
+                                <h1 className="phil-title text-glow" style={{ fontSize: '48px', marginBottom: '10px', lineHeight: '1.2' }}>
+                                    THE PHIL
+                                </h1>
+                                <h1 className="phil-title text-glow" style={{ fontSize: '48px', marginBottom: '10px', lineHeight: '1.2' }}>
+                                    MITCHELL
+                                </h1>
+                                <h2 className="phil-title text-glow" style={{ fontSize: '36px', lineHeight: '1.2' }}>
+                                    RADI<span className="radio-o">O</span> H<span className="radio-o">O</span>UR
+                                </h2>
+                                <div style={{ marginTop: '30px' }}>
+                                    <LightningIcon size={40} />
+                                </div>
+                            </div>
+                            
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                                <button
+                                    onClick={() => setMode('audience')}
+                                    className="btn-rapture"
+                                    style={{ 
+                                        padding: '25px',
+                                        borderRadius: '8px',
+                                        fontSize: '18px',
+                                        fontFamily: 'Cinzel, serif',
+                                        letterSpacing: '0.1em',
+                                        cursor: 'pointer',
+                                        position: 'relative',
+                                        zIndex: 1
+                                    }}
+                                >
+                                    JOIN THE CONGREGATION
+                                </button>
+                                
+                                <button
+                                    onClick={() => setMode('control')}
+                                    className="btn-rapture"
+                                    style={{ 
+                                        padding: '25px',
+                                        borderRadius: '8px',
+                                        fontSize: '18px',
+                                        fontFamily: 'Cinzel, serif',
+                                        letterSpacing: '0.1em',
+                                        cursor: 'pointer',
+                                        position: 'relative',
+                                        zIndex: 1
+                                    }}
+                                >
+                                    PREACHER CONTROLS
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                );
+            }
+            
+            // Audience mode
+            if (mode === 'audience') {
+                if (!track) {
+                    return (
+                        <div className="rapture-bg" style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
+                            <div style={{ maxWidth: '500px', width: '100%', textAlign: 'center' }}>
+                                <div className="lightning-glow" style={{ 
+                                    width: '120px', 
+                                    height: '120px', 
+                                    margin: '0 auto 40px',
+                                    borderRadius: '50%',
+                                    background: 'radial-gradient(circle, rgba(139,0,139,0.3) 0%, transparent 70%)',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center'
+                                }}>
+                                    <LightningIcon size={60} />
+                                </div>
+                                
+                                <h1 className="phil-title text-glow" style={{ fontSize: '32px', marginBottom: '20px' }}>
+                                    PREPARE FOR<br/>THE RAPTURE
+                                </h1>
+                                
+                                <p style={{ color: 'rgba(255,255,255,0.7)', marginBottom: '15px', fontSize: '16px' }}>
+                                    This will activate your phone's flashlight<br/>during the broadcast.
+                                </p>
+                                
+                                <p style={{ color: 'rgba(255,255,255,0.5)', fontSize: '14px', marginBottom: '40px', fontStyle: 'italic' }}>
+                                    Keep your device face-down during the performance
+                                </p>
+                                
+                                <button
+                                    onClick={requestFlashlight}
+                                    className="btn-rapture"
+                                    style={{ 
+                                        width: '100%',
+                                        padding: '20px',
+                                        borderRadius: '8px',
+                                        fontSize: '18px',
+                                        fontFamily: 'Cinzel, serif',
+                                        letterSpacing: '0.1em',
+                                        cursor: 'pointer',
+                                        marginBottom: '20px'
+                                    }}
+                                >
+                                    RECEIVE THE SIGNAL
+                                </button>
+                                
+                                <button
+                                    onClick={() => setMode('choose')}
+                                    style={{ 
+                                        background: 'none',
+                                        border: 'none',
+                                        color: 'rgba(255,255,255,0.4)',
+                                        cursor: 'pointer',
+                                        fontSize: '14px',
+                                        fontFamily: 'Cinzel, serif',
+                                        padding: '10px'
+                                    }}
+                                >
+                                    Return
+                                </button>
+                            </div>
+                        </div>
+                    );
+                }
+                
+                return (
+                    <div className="rapture-bg" style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
+                        <div style={{ maxWidth: '500px', width: '100%', textAlign: 'center' }}>
+                            <div style={{
+                                width: '150px',
+                                height: '150px',
+                                margin: '0 auto 40px',
+                                borderRadius: '50%',
+                                background: isFlashing 
+                                    ? 'radial-gradient(circle, rgba(255,215,0,0.8) 0%, rgba(139,0,139,0.4) 100%)'
+                                    : 'radial-gradient(circle, rgba(139,0,139,0.2) 0%, transparent 70%)',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                transition: 'all 0.3s ease',
+                                border: isFlashing ? '3px solid rgba(255,215,0,0.5)' : '3px solid rgba(139,0,139,0.3)'
+                            }}>
+                                <LightningIcon size={70} />
+                            </div>
+                            
+                            <div style={{ marginBottom: '30px' }}>
+                                <div className="connected-indicator" style={{
+                                    width: '12px',
+                                    height: '12px',
+                                    borderRadius: '50%',
+                                    background: '#00ff64',
+                                    margin: '0 auto 15px'
+                                }} />
+                                <h2 className="phil-title text-glow" style={{ fontSize: '28px', marginBottom: '10px' }}>
+                                    CONNECTED
+                                </h2>
+                                <p style={{ color: 'rgba(255,255,255,0.6)', fontSize: '16px', fontStyle: 'italic' }}>
+                                    Awaiting transmission...
+                                </p>
+                            </div>
+                            
+                            <div style={{ 
+                                borderTop: '1px solid rgba(139,0,139,0.3)',
+                                paddingTop: '30px',
+                                marginTop: '40px'
+                            }}>
+                                <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: '12px' }}>
+                                    Keep your device face-down
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                );
+            }
+            
+            // Control panel
+            if (mode === 'control') {
+                if (!isAuthenticated) {
+                    return (
+                        <div className="rapture-bg" style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
+                            <div style={{ maxWidth: '500px', width: '100%' }}>
+                                <div style={{ textAlign: 'center', marginBottom: '40px' }}>
+                                    <div className="lightning-glow pulse-ring" style={{
+                                        width: '80px',
+                                        height: '80px',
+                                        margin: '0 auto 30px',
+                                        borderRadius: '50%',
+                                        background: 'radial-gradient(circle, rgba(139,0,0,0.5) 0%, transparent 70%)',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        border: '2px solid rgba(139,0,139,0.5)'
+                                    }}>
+                                        <RadioIcon size={40} />
+                                    </div>
+                                    <h1 className="phil-title text-glow" style={{ fontSize: '28px', marginBottom: '10px' }}>
+                                        BROADCAST CONTROLS
+                                    </h1>
+                                    <p style={{ color: 'rgba(255,255,255,0.5)', fontSize: '14px', fontStyle: 'italic' }}>
+                                        Authentication Required
+                                    </p>
+                                </div>
+                                
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                                    <input
+                                        type="password"
+                                        value={password}
+                                        onChange={(e) => setPassword(e.target.value)}
+                                        onKeyPress={(e) => e.key === 'Enter' && handleLogin()}
+                                        placeholder="Enter password"
+                                        style={{
+                                            padding: '15px',
+                                            borderRadius: '8px',
+                                            fontSize: '16px',
+                                            textAlign: 'center',
+                                            letterSpacing: '0.1em'
+                                        }}
+                                    />
+                                    <button
+                                        onClick={handleLogin}
+                                        className="btn-rapture"
+                                        style={{
+                                            padding: '15px',
+                                            borderRadius: '8px',
+                                            fontSize: '16px',
+                                            fontFamily: 'Cinzel, serif',
+                                            letterSpacing: '0.1em',
+                                            cursor: 'pointer'
+                                        }}
+                                    >
+                                        BEGIN TRANSMISSION
+                                    </button>
+                                    <button
+                                        onClick={() => setMode('choose')}
+                                        style={{
+                                            background: 'none',
+                                            border: 'none',
+                                            color: 'rgba(255,255,255,0.4)',
+                                            cursor: 'pointer',
+                                            fontSize: '14px',
+                                            fontFamily: 'Cinzel, serif',
+                                            padding: '10px'
+                                        }}
+                                    >
+                                        Return
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    );
+                }
+                
+                return (
+                    <div className="rapture-bg" style={{ minHeight: '100vh', padding: '20px' }}>
+                        <div style={{ maxWidth: '600px', margin: '0 auto' }}>
+                            <div style={{
+                                background: 'rgba(0,0,0,0.5)',
+                                border: '2px solid rgba(139,0,139,0.3)',
+                                borderRadius: '8px',
+                                padding: '30px',
+                                marginBottom: '30px'
+                            }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+                                    <h1 className="phil-title text-glow" style={{ fontSize: '24px' }}>
+                                        BROADCAST CONTROLS
+                                    </h1>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                        <div className="connected-indicator" style={{
+                                            width: '8px',
+                                            height: '8px',
+                                            borderRadius: '50%',
+                                            background: '#00ff64'
+                                        }} />
+                                        <span style={{ color: 'rgba(255,255,255,0.6)', fontSize: '12px' }}>LIVE</span>
+                                    </div>
+                                </div>
+                                <div style={{ color: 'rgba(255,255,255,0.5)', fontSize: '14px', fontStyle: 'italic' }}>
+                                    The Phil Mitchell Radio Hour
+                                </div>
+                            </div>
+                            
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', marginBottom: '30px' }}>
+                                <button
+                                    onClick={() => send({ command: 'wave' })}
+                                    className="btn-rapture"
+                                    style={{
+                                        padding: '40px 30px',
+                                        borderRadius: '8px',
+                                        fontSize: '20px',
+                                        fontFamily: 'Cinzel, serif',
+                                        letterSpacing: '0.1em',
+                                        cursor: 'pointer',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        gap: '15px'
+                                    }}
+                                >
+                                    <RadioIcon size={32} />
+                                    WAVE OF LIGHT
+                                </button>
+                                
+                                <button
+                                    onClick={() => send({ command: 'flicker' })}
+                                    className="btn-rapture"
+                                    style={{
+                                        padding: '40px 30px',
+                                        borderRadius: '8px',
+                                        fontSize: '20px',
+                                        fontFamily: 'Cinzel, serif',
+                                        letterSpacing: '0.1em',
+                                        cursor: 'pointer',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        gap: '15px'
+                                    }}
+                                >
+                                    <LightningIcon size={32} />
+                                    CHAOTIC FLICKER
+                                </button>
+                            </div>
+                            
+                            <div style={{
+                                background: 'rgba(0,0,0,0.5)',
+                                border: '2px solid rgba(139,0,139,0.3)',
+                                borderRadius: '8px',
+                                padding: '25px',
+                                marginBottom: '20px'
+                            }}>
+                                <h3 className="phil-title" style={{ fontSize: '16px', marginBottom: '20px', color: 'rgba(255,255,255,0.8)' }}>
+                                    EFFECT PATTERNS
+                                </h3>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '15px', fontSize: '14px', color: 'rgba(255,255,255,0.7)' }}>
+                                    <div>
+                                        <span style={{ color: '#8b0000', fontWeight: 'bold' }}>Wave of Light:</span> Cascading illumination across the congregation (3 flashes per device with staggered timing)
+                                    </div>
+                                    <div>
+                                        <span style={{ color: '#8b008b', fontWeight: 'bold' }}>Chaotic Flicker:</span> Erratic, unsettling pattern for 10 seconds
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <button
+                                onClick={() => {
+                                    setIsAuthenticated(false);
+                                    setPassword('');
+                                    setMode('choose');
+                                }}
+                                style={{
+                                    width: '100%',
+                                    background: 'none',
+                                    border: 'none',
+                                    color: 'rgba(255,255,255,0.4)',
+                                    cursor: 'pointer',
+                                    fontSize: '14px',
+                                    fontFamily: 'Cinzel, serif',
+                                    padding: '15px'
+                                }}
+                            >
+                                End Transmission
+                            </button>
+                        </div>
+                    </div>
+                );
+            }
+        };
+
+        ReactDOM.render(<FlashlightController />, document.getElementById('root'));
+    </script>
+</body>
+</html>
